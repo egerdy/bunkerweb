@@ -38,9 +38,9 @@ function createCrowdSecPageState() {
     isCurrent(token) {
       return Boolean(
         token &&
-        token.connection === connection &&
-        token.generation === generation &&
-        sequences.get(token.channel) === token.sequence,
+          token.connection === connection &&
+          token.generation === generation &&
+          sequences.get(token.channel) === token.sequence,
       );
     },
     bindAction(decision, source) {

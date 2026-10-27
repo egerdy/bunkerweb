@@ -103,7 +103,9 @@ def mask_uri(uri: str) -> str:
     # SQLAlchemy ends the password at the first "@", the host part may still hold some, so redact up to the last one before the path or query
     authority_end = min((i for i in (uri.find("/", match.end()), uri.find("?", match.end())) if i >= 0), default=len(uri))
     end = max(match.end(), uri.rfind("@", match.end() - 1, authority_end) + 1)
-    return f"{uri[: match.start('password')]}{REDACTED}{uri[end - 1 :]}"
+    password_start = match.start("password")
+    authority_start = end - 1
+    return f"{uri[:password_start]}{REDACTED}{uri[authority_start:]}"
 
 
 def mask_config(config: dict) -> dict:
