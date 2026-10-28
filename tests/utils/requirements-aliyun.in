@@ -1,0 +1,4 @@
+alibabacloud-alidns20150109==4.6.1
+# Compatibility test environment; runtime image hash locks follow after selection.
+certbot==5.8.0
+certbot-dns-aliyun-next==2.0.2

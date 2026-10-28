@@ -7,7 +7,6 @@ from ipaddress import ip_address
 from json import dumps, loads
 from os import getenv, sep
 from os.path import join
-from pathlib import Path
 from re import MULTILINE, search
 from subprocess import DEVNULL, PIPE, STDOUT, Popen, run
 from sys import exit as sys_exit, path as sys_path
@@ -57,6 +56,7 @@ from letsencrypt_utils import (
     purge_lineage,
     purge_stale_account,
     resolve_certbot_entrypoint,
+    renewal_dns_provider,
     sanitize_and_persist,
     stream_certbot,
 )
@@ -864,22 +864,28 @@ def certbot_new(
         command.append("--preferred-challenges=dns")
 
         # * Adding the propagation time to the command
+        dns_plugin_name = "aliyun-next" if config["authenticator"] == "aliyun" else config["authenticator"]
         if config["dns_propagation"] != DNS_PROPAGATION_DEFAULT:
-            command.extend([f"--dns-{config['authenticator']}-propagation-seconds", str(config["dns_propagation"])])
+            command.extend([f"--dns-{dns_plugin_name}-propagation-seconds", str(config["dns_propagation"])])
 
         # * Caching the credentials file if not already done
         credentials = config["provider"].get_formatted_credentials()
         credentials_file = f"credentials_{bytes_hash(credentials, algorithm='sha256')[:12]}.{config['provider'].get_file_type()}"
-        credentials_path = CACHE_PATH.joinpath(credentials_file)
-        if not credentials_path.is_file() or config["force_renew"]:
-            JOB.cache_file(credentials_file, credentials)
-        credentials_path.chmod(0o600)  # Set permissions to read/write for owner only
+        if config["authenticator"] == "aliyun":
+            # Certbot persists this path for renewals. No API secret is written
+            # into the job cache sent to Workers or stored in the config DB.
+            credentials_path = config["provider"].get_credentials_path()
+        else:
+            credentials_path = CACHE_PATH.joinpath(credentials_file)
+            if not credentials_path.is_file() or config["force_renew"]:
+                JOB.cache_file(credentials_file, credentials)
+            credentials_path.chmod(0o600)  # Set permissions to read/write for owner only
 
         # * Adding the credentials to the command
         if config["authenticator"] == "route53":
             cmd_env["AWS_CONFIG_FILE"] = credentials_path.as_posix()
         else:
-            command.extend([f"--dns-{config['authenticator']}-credentials", credentials_path.as_posix()])
+            command.extend([f"--dns-{dns_plugin_name}-credentials", credentials_path.as_posix()])
 
         command.extend(config["provider"].get_extra_args())
     else:
@@ -1117,15 +1123,10 @@ try:
                 match_challenge = search(r"^pref_challs\s*=\s*(\S+)$", renewal_content, MULTILINE)
                 challenge = match_challenge.group(1).split(",")[0].replace("-01", "") if match_challenge else ""
 
-                match_authenticator = search(r"^authenticator\s*=\s*(\S+)$", renewal_content, MULTILINE)
-                authenticator = match_authenticator.group(1).replace("dns-", "") if match_authenticator else ""
-
-                match_credentials = search(rf"^dns_{authenticator}_credentials\s*=\s*(\S+)$", renewal_content, MULTILINE)
+                authenticator, credentials_path = renewal_dns_provider(renewal_content)
                 credentials_hash = ""
-                if match_credentials and match_credentials.group(1):
-                    credentials_path = Path(match_credentials.group(1))
-                    if credentials_path.is_file():
-                        credentials_hash = file_hash(credentials_path, algorithm="sha256")
+                if credentials_path and credentials_path.is_file():
+                    credentials_hash = file_hash(credentials_path, algorithm="sha256")
 
                 match_server = search(r"^server\s*=\s*(\S+)$", renewal_content, MULTILINE)
                 server = match_server.group(1) if match_server else ""

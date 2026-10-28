@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
 from pathlib import Path
+from configparser import ConfigParser, Error as ConfigError
+from os import O_CLOEXEC, O_NOFOLLOW, O_NONBLOCK, O_RDONLY, close, fstat, open as os_open, read as os_read
+from stat import S_ISREG
 from sys import path as sys_path
 from typing import Any, List, Literal, Optional, Tuple
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # Define paths
 LIB_PATH = Path("/var/lib/bunkerweb/letsencrypt")
@@ -57,6 +60,46 @@ class Provider(BaseModel):
     def __repr_args__(self) -> List[Tuple[str, Any]]:
         """Redact secret-like fields when a provider is stringified for logs/debug output."""
         return [(field_name, self._redact_field_value(field_name, value)) for field_name, value in super().__repr_args__()]
+
+
+ALIDNS_SECRETS_PATH = Path("/run/secrets/bunkerweb-alidns")
+
+
+class AliyunProvider(Provider):
+    """Keep AliDNS API keys in a Scheduler-only secret mount, not job caches."""
+
+    credentials_reference: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
+
+    def get_credentials_path(self) -> Path:
+        return ALIDNS_SECRETS_PATH / f"{self.credentials_reference}.ini"
+
+    def get_formatted_credentials(self) -> bytes:
+        fd = os_open(self.get_credentials_path(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)
+        try:
+            info = fstat(fd)
+            if not S_ISREG(info.st_mode) or info.st_mode & 0o027 or info.st_size > 16384:
+                raise ValueError("AliDNS credentials require a restricted regular file of at most 16 KiB")
+            content = os_read(fd, 16385)
+            if len(content) > 16384:
+                raise ValueError("AliDNS credential file is too large")
+        finally:
+            close(fd)
+        try:
+            parser = ConfigParser(interpolation=None)
+            parser.read_string("[DEFAULT]\n" + content.decode("utf-8"))
+            required = {"dns_aliyun_next_access_key_id", "dns_aliyun_next_access_key_secret"}
+            allowed = required | {"dns_aliyun_next_region_id", "dns_aliyun_next_security_token"}
+            if parser.sections() or not required.issubset(parser.defaults()) or set(parser.defaults()) - allowed:
+                raise ValueError()
+            if any(not parser.defaults()[key].strip() for key in required):
+                raise ValueError()
+        except (ConfigError, UnicodeError, ValueError):
+            raise ValueError("Invalid AliDNS credential file; check the required dns_aliyun_next fields") from None
+        return content
+
+    @staticmethod
+    def get_extra_args() -> List[str]:
+        return ["-a", "dns-aliyun-next"]
 
 
 class BunnyNetProvider(Provider):

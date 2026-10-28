@@ -107,6 +107,7 @@
       "type": "select",
       "select": [
         "",
+        "aliyun",
         "bunny",
         "cloudns",
         "cloudflare",
@@ -138,6 +139,15 @@
         "scaleway",
         "transip"
       ]
+    },
+    "LETS_ENCRYPT_DNS_CREDENTIAL_REFERENCE": {
+      "context": "multisite",
+      "default": "",
+      "help": "AliDNS only: name of a Scheduler-only INI file mounted at /run/secrets/bunkerweb-alidns/<name>.ini. Store the file outside BunkerWeb settings and job caches. Do not put API keys in Credential Item.",
+      "id": "lets-encrypt-dns-credential-reference",
+      "label": "DNS Credential Reference",
+      "regex": "^([A-Za-z0-9][A-Za-z0-9_-]{0,63})?$",
+      "type": "text"
     },
     "LETS_ENCRYPT_DNS_PROPAGATION": {
       "context": "multisite",

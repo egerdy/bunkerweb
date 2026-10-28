@@ -22,17 +22,18 @@ from os import (
 )
 from os.path import join
 from pathlib import Path
-from re import match as re_match, search as re_search
+from re import MULTILINE, match as re_match, search as re_search
 from subprocess import TimeoutExpired
 from threading import Thread
 from traceback import format_exc
-from typing import Callable, Dict, List, Mapping, Optional, Type, Union
+from typing import Callable, Dict, List, Mapping, Optional, Tuple, Type, Union
 
 from pydantic import ValidationError
 
 from common_utils import bytes_hash  # type: ignore
 from logger import DATE_FORMAT, LOG_FORMAT  # type: ignore
 from letsencrypt_providers import (
+    AliyunProvider,
     BunnyNetProvider,
     ClouDNSProvider,
     CloudflareProvider,
@@ -88,6 +89,7 @@ ZEROSSL_DIRECTORY = "https://acme.zerossl.com/v2/DV90"
 # (issuance) and certbot-renew.py (renewal, via setup_route53_aws_config) resolve DNS
 # providers through one shared, importable source of truth.
 PROVIDERS: Dict[str, Type[Provider]] = {
+    "aliyun": AliyunProvider,
     "bunny": BunnyNetProvider,
     "cloudns": ClouDNSProvider,
     "cloudflare": CloudflareProvider,
@@ -136,6 +138,19 @@ def extract_provider(
     multisite ``{service}_`` form); ``service`` is used only for log context. Reads from
     ``os.environ`` directly.
     """
+    if authenticator == "aliyun":
+        # Only a non-secret reference may be stored in service settings. The
+        # referenced INI is mounted into Scheduler, never cached or distributed.
+        reference_key = credential_key.removesuffix("CREDENTIAL_ITEM") + "CREDENTIAL_REFERENCE"
+        try:
+            provider = AliyunProvider(credentials_reference=environ.get(reference_key, ""))
+            provider.get_formatted_credentials()
+            return provider
+        except (ValueError, OSError):
+            if logger is not None:
+                logger.error(f"[Service: {service}] AliDNS credential reference is missing, invalid or unreadable; check Scheduler secret mounts.")
+            return None
+
     credential_items: Dict[str, str] = {}
 
     # Collect all credential items
@@ -208,6 +223,20 @@ def extract_provider(
             ]
             logger.error(f"[Service: {service}] Error while validating credentials, skipping generation: {errors}")
         return None
+
+
+def renewal_dns_provider(renewal_content: str) -> Tuple[str, Optional[Path]]:
+    """Map Certbot's external plugin name and INI option to our provider ID.
+
+    certbot-dns-aliyun-next stores `authenticator = dns-aliyun-next`, but its
+    argparse/config-file credential option uses underscores. Neither spelling
+    is BunkerWeb's provider ID `aliyun`.
+    """
+    authenticator_match = re_search(r"^authenticator\s*=\s*(\S+)$", renewal_content, MULTILINE)
+    authenticator = authenticator_match.group(1).replace("dns-", "") if authenticator_match else ""
+    credential_option = "aliyun_next" if authenticator == "aliyun-next" else authenticator
+    credentials_match = re_search(rf"^dns_{credential_option}_credentials\s*=\s*(\S+)$", renewal_content, MULTILINE)
+    return ("aliyun" if authenticator == "aliyun-next" else authenticator), Path(credentials_match.group(1)) if credentials_match else None
 
 
 def write_provider_credentials_file(provider_instance: Provider, data_path: Union[str, Path] = LETSENCRYPT_CACHE_PATH) -> str:
