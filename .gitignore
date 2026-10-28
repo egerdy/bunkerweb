@@ -23,3 +23,14 @@ src/ui/client/templates
 src/ui/static
 src/ui/templates
 .DS_Store
+/misc/fork/wheelhouse/
+
+# Private downstream operations and generated build material
+/.local/
+/artifacts/
+/build-output/
+/secrets/
+*.local.env
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
