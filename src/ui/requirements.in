@@ -1,3 +1,4 @@
+alibabacloud-alidns20150109==4.6.1
 bcrypt==5.0.0
 https://github.com/eclipse-biscuit/biscuit-python/archive/c0fa69824a3e601da86cf5cecde09f75ea8df4d7.zip#egg=biscuit-python # 0.4.1
 Brotli==1.2.0

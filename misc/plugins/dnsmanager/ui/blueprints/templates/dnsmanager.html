@@ -1,0 +1,461 @@
+{% extends "dashboard.html" %} {% block content %}
+<div
+  id="dnsmanager"
+  data-base="{{ dnsmanager_base }}"
+  data-write="{{ 'yes' if can_write else 'no' }}"
+  data-admin="{{ 'yes' if can_admin else 'no' }}"
+  data-providers="{{ dnsmanager_providers | tojson | forceescape }}"
+>
+  <input type="hidden" id="dns-csrf" value="{{ csrf_token() }}" />
+  <select id="dns-account" hidden aria-label="当前凭据"></select>
+  <select id="dns-domain" hidden aria-label="当前域名"></select>
+  <div class="d-flex justify-content-between align-items-center mb-3 gap-3">
+    <div>
+      <h4 id="dns-view-title" class="mb-1">DNS 凭据</h4>
+      <p id="dns-view-description" class="text-muted mb-0">
+        选择凭据，管理对应的域名与解析记录
+      </p>
+    </div>
+    <button
+      id="dns-open-audit"
+      type="button"
+      class="btn btn-outline-secondary text-nowrap"
+    >
+      操作审计
+    </button>
+  </div>
+  <nav aria-label="DNS管理导航" class="mb-3">
+    <ol class="breadcrumb mb-0">
+      <li class="breadcrumb-item">
+        <button id="dns-crumb-accounts" type="button" class="btn btn-link p-0">
+          凭据
+        </button>
+      </li>
+      <li id="dns-crumb-profile-item" class="breadcrumb-item" hidden>
+        <button
+          id="dns-crumb-domains"
+          type="button"
+          class="btn btn-link p-0"
+        ></button>
+      </li>
+      <li
+        id="dns-crumb-domain-item"
+        class="breadcrumb-item active"
+        aria-current="page"
+        hidden
+      >
+        <span id="dns-crumb-domain"></span>
+      </li>
+    </ol>
+  </nav>
+  <div id="dns-message" class="alert alert-info" role="status" hidden></div>
+  <section id="dns-accounts-view" class="card">
+    <div
+      class="card-header d-flex justify-content-between gap-3 align-items-center flex-wrap"
+    >
+      <input
+        id="dns-account-search"
+        class="form-control w-auto"
+        placeholder="搜索凭据名称或域名"
+        aria-label="搜索凭据账号"
+      />
+      {% if can_admin and can_write %}<button
+        id="dns-new-account"
+        type="button"
+        class="btn btn-primary"
+      >
+        新增凭据</button
+      >{% endif %}
+    </div>
+    <div class="table-responsive">
+      <table class="table align-middle text-nowrap mb-0">
+        <thead>
+          <tr>
+            <th>名称</th>
+            <th>DNS 供应商</th>
+            <th>域名数</th>
+            <th>更新时间</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="dns-accounts"></tbody>
+      </table>
+    </div>
+    <div id="dns-account-empty" class="text-center text-muted p-5" hidden>
+      没有符合条件的凭据。点击“新增凭据”开始配置。
+    </div>
+    <div class="card-footer text-muted" id="dns-account-count"></div>
+  </section>
+  <section id="dns-domains-view" class="card" hidden>
+    <div class="card-header d-flex align-items-center gap-3 flex-wrap">
+      <input
+        id="dns-domain-search"
+        class="form-control w-auto"
+        placeholder="搜索域名"
+        aria-label="搜索域名"
+      />
+      {% if can_admin and can_write %}<button
+        id="dns-edit-scope"
+        type="button"
+        class="btn btn-outline-primary"
+      >
+        管理授权域名</button
+      >{% endif %}
+    </div>
+    <div class="table-responsive">
+      <table class="table align-middle text-nowrap mb-0">
+        <thead>
+          <tr>
+            <th>域名</th>
+            <th>所属凭据</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="dns-domains"></tbody>
+      </table>
+    </div>
+    <div id="dns-domain-empty" class="text-center text-muted p-5" hidden>
+      没有符合条件的授权域名。
+    </div>
+    <div class="card-footer text-muted" id="dns-domain-count"></div>
+  </section>
+  <section id="dns-records-view" class="card" hidden>
+    <div
+      class="card-header d-flex justify-content-between gap-3 align-items-center flex-wrap"
+    >
+      <span class="text-muted">DNS 解析记录</span>
+      <div class="d-flex gap-2">
+        <button
+          id="dns-refresh"
+          type="button"
+          class="btn btn-outline-secondary"
+        >
+          刷新</button
+        >{% if can_write %}<button
+          id="dns-new-record"
+          type="button"
+          class="btn btn-primary"
+        >
+          添加记录</button
+        >{% endif %}
+      </div>
+    </div>
+    <form id="dns-record-filter-form" class="card-body py-3">
+      <div class="row g-2 align-items-end">
+        <div class="col-sm-5 col-md-4">
+          <label for="dns-record-rr-filter" class="form-label">主机记录</label
+          ><input
+            id="dns-record-rr-filter"
+            class="form-control"
+            placeholder="主机，例如 @ 或 www"
+            maxlength="253"
+          />
+        </div>
+        <div class="col-sm-4 col-md-3">
+          <label for="dns-record-type-filter" class="form-label">记录类型</label
+          ><select id="dns-record-type-filter" class="form-select">
+            <option value="">全部类型</option>
+            {% for kind in
+            ['A','AAAA','CNAME','MX','TXT','NS','SRV','CAA','REDIRECT_URL','FORWARD_URL']
+            %}
+            <option>{{kind}}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-sm-3 col-md-5 d-flex gap-2">
+          <button type="submit" class="btn btn-primary">搜索</button
+          ><button
+            id="dns-reset-record-filter"
+            type="button"
+            class="btn btn-outline-secondary"
+          >
+            重置
+          </button>
+        </div>
+      </div>
+    </form>
+    <div class="table-responsive">
+      <table class="table align-middle text-nowrap mb-0">
+        <thead>
+          <tr>
+            <th>主机记录</th>
+            <th>类型</th>
+            <th>记录值</th>
+            <th>TTL</th>
+            <th>线路</th>
+            <th>状态</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="dns-records"></tbody>
+      </table>
+    </div>
+    <div id="dns-record-empty" class="text-center text-muted p-5" hidden>
+      该域名暂无解析记录。
+    </div>
+    <div
+      class="card-footer d-flex align-items-center justify-content-between gap-3"
+    >
+      <span id="dns-page"></span>
+      <div class="d-flex gap-2">
+        <button
+          id="dns-prev"
+          class="btn btn-outline-secondary btn-sm"
+          type="button"
+        >
+          上一页</button
+        ><button
+          id="dns-next"
+          class="btn btn-outline-secondary btn-sm"
+          type="button"
+        >
+          下一页
+        </button>
+      </div>
+    </div>
+  </section>
+  <dialog
+    id="dns-account-details"
+    class="col-11 col-md-8 col-lg-6 p-4 border-0 rounded shadow"
+    aria-labelledby="dns-details-title"
+  >
+    <h5 id="dns-details-title">凭据详情</h5>
+    <dl id="dns-account-detail-values" class="row mb-3"></dl>
+    <button
+      id="dns-close-account-details"
+      type="button"
+      class="btn btn-outline-secondary"
+    >
+      关闭
+    </button>
+  </dialog>
+  {% if can_write %}
+  <dialog
+    id="dns-record-editor"
+    class="col-11 col-md-10 col-lg-8 p-0 border-0 rounded shadow"
+    aria-labelledby="dns-edit-title"
+  >
+    <form id="dns-record-form" class="p-4">
+      <h5 id="dns-edit-title">新增解析记录</h5>
+      <div class="row g-2">
+        <div class="col-md-3">
+          <label for="dns-rr" class="form-label">主机记录</label
+          ><input
+            id="dns-rr"
+            class="form-control"
+            required
+            maxlength="253"
+            placeholder="www 或 @"
+          />
+        </div>
+        <div class="col-md-2">
+          <label for="dns-type" class="form-label">类型</label
+          ><select id="dns-type" class="form-select">
+            {% for type in
+            ['A','AAAA','CNAME','MX','TXT','NS','SRV','CAA','REDIRECT_URL','FORWARD_URL']
+            %}
+            <option>{{ type }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label for="dns-ttl" class="form-label">TTL（秒）</label
+          ><input
+            id="dns-ttl"
+            class="form-control"
+            type="number"
+            min="1"
+            max="604800"
+            value="600"
+            required
+          />
+        </div>
+        <div class="col-md-2">
+          <label for="dns-line" class="form-label">线路代码</label
+          ><input
+            id="dns-line"
+            class="form-control"
+            value="default"
+            maxlength="128"
+            required
+          />
+        </div>
+        <div class="col-md-2">
+          <label for="dns-priority" class="form-label">MX 优先级</label
+          ><input
+            id="dns-priority"
+            class="form-control"
+            type="number"
+            min="1"
+            max="50"
+            value="1"
+          />
+        </div>
+        <div class="col-12">
+          <label for="dns-value" class="form-label">记录值</label
+          ><textarea
+            id="dns-value"
+            class="form-control"
+            required
+            maxlength="4096"
+            rows="2"
+          ></textarea>
+        </div>
+      </div>
+      <div class="mt-3">
+        <button id="dns-save-record" class="btn btn-primary" type="submit">
+          保存记录
+        </button>
+        <button
+          id="dns-reset-record"
+          class="btn btn-outline-secondary"
+          type="button"
+        >
+          取消
+        </button>
+      </div>
+    </form>
+  </dialog>
+  {% endif %} {% if can_admin and can_write %}
+  <dialog
+    id="dns-account-editor"
+    class="col-11 col-md-8 col-lg-6 p-4 border-0 rounded shadow"
+    aria-labelledby="dns-account-editor-title"
+  >
+    <h5 id="dns-account-editor-title">新增凭据</h5>
+    <p>
+      此处管理业务 DNS
+      凭据。如证书签发共用同一密钥，更换凭据时还需同步更新签发配置。
+    </p>
+    <form id="dns-account-form" class="row g-2">
+      <div class="col-12">
+        <label for="dns-provider" class="form-label">DNS 提供商</label>
+        <select id="dns-provider" class="form-select" required>
+          {% for item in dnsmanager_providers %}
+          <option value="{{ item.id }}">{{ item.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-6">
+        <label for="dns-account-label" class="form-label">名称</label
+        ><input
+          id="dns-account-label"
+          class="form-control"
+          maxlength="128"
+          required
+        />
+      </div>
+      <div class="col-12">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <span class="form-label mb-0" id="dns-domain-label"
+            >授权 DNS 区域</span
+          >
+          <button
+            id="dns-add-domain"
+            class="btn btn-sm btn-outline-primary"
+            type="button"
+          >
+            ＋ 添加区域
+          </button>
+        </div>
+        <div
+          id="dns-account-domains"
+          role="group"
+          aria-labelledby="dns-domain-label"
+        ></div>
+        <p class="text-muted mb-0">
+          每行一个，至少保留一个授权区域。此处删除只调整账号授权范围，不删除云端域名或解析记录。
+        </p>
+      </div>
+      <div class="col-12">
+        <label
+          ><input id="dns-rotate-credentials" type="checkbox" checked />
+          设置新凭据</label
+        >
+        <p id="dns-credential-help" class="text-muted">
+          填写完整凭据；保存后只显示掩码。
+        </p>
+      </div>
+      <div id="dns-auth-options" class="col-12 row g-2 m-0 p-0"></div>
+      <h6 class="col-12 mt-3">凭证</h6>
+      <div id="dns-credential-fields" class="col-12 row g-2 m-0 p-0"></div>
+      <h6 class="col-12 mt-3">API 参数与解析默认值</h6>
+      <div id="dns-provider-options" class="col-12 row g-2 m-0 p-0"></div>
+      <p class="text-muted col-12">
+        RAM Role 需控制面运行在已绑定角色且可访问实例元数据的 ECS 上。TTL / LINE
+        只作为新增记录默认值；轮询与等待时间用于解析检测，不会自动修改现有记录或证书签发配置。
+      </p>
+      <div>
+        <button id="dns-save-account" class="btn btn-primary" type="submit">
+          保存凭据
+        </button>
+        <button
+          id="dns-cancel-account"
+          class="btn btn-outline-secondary"
+          type="button"
+        >
+          取消
+        </button>
+      </div>
+    </form>
+  </dialog>
+  {% endif %}
+  <dialog
+    id="dns-resolution-dialog"
+    class="col-11 col-lg-8 p-4 border-0 rounded shadow"
+  >
+    <h5>解析测试</h5>
+    <pre id="dns-resolution-result" class="text-wrap"></pre>
+    <button id="dns-close-resolution" type="button" class="btn btn-secondary">
+      关闭并停止检测
+    </button>
+  </dialog>
+  <dialog
+    id="dns-audit-dialog"
+    class="col-11 col-lg-10 p-4 border-0 rounded shadow"
+    aria-labelledby="dns-audit-title"
+  >
+    <h5 id="dns-audit-title">操作审计</h5>
+    <p class="mt-2">
+      PENDING / UNKNOWN 表示结果未确认。请核对云端记录和请求
+      ID，勿直接重复提交。
+    </p>
+    <button
+      id="dns-audit-refresh"
+      class="btn btn-outline-primary"
+      type="button"
+    >
+      刷新审计
+    </button>
+    <div class="table-responsive">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>时间 / 操作 ID</th>
+            <th>操作者</th>
+            <th>操作 / 状态</th>
+            <th>前后值及结果</th>
+          </tr>
+        </thead>
+        <tbody id="dns-audit"></tbody>
+      </table>
+    </div>
+    <button id="dns-audit-prev" class="btn btn-outline-secondary" type="button">
+      上一页
+    </button>
+    <span id="dns-audit-page"></span>
+    <button id="dns-audit-next" class="btn btn-outline-secondary" type="button">
+      下一页
+    </button>
+    <button
+      id="dns-close-audit"
+      type="button"
+      class="btn btn-outline-secondary"
+    >
+      关闭
+    </button>
+  </dialog>
+</div>
+{% endblock %} {% block scripts %}
+<script src="{{ dnsmanager_script }}" nonce="{{ script_nonce }}" defer></script>
+{% endblock %}

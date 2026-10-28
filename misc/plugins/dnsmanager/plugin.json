@@ -1,0 +1,9 @@
+{
+  "id": "dnsmanager",
+  "order": 999,
+  "name": "DNS Manager",
+  "description": "Manage DNS credentials, domains and records using provider adapters.",
+  "version": "0.5.1",
+  "stream": "no",
+  "settings": {}
+}
