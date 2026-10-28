@@ -1,3 +1,37 @@
+# BunkerWeb Fork：AliDNS 与 DNS Manager
+
+本仓库是 [bunkerity/bunkerweb](https://github.com/bunkerity/bunkerweb) 的社区派生项目，基于 **BunkerWeb 1.6.17**（`b09e4184`）。不是上游官方发行版，也不代表已经合入上游。原项目介绍、作者信息、许可和文档保留在下方。
+
+## 在原项目上增加了什么
+
+|模块|本 Fork 的改动|边界|
+|---|---|---|
+|Let's Encrypt / AliDNS|接入 `certbot-dns-aliyun-next`，增加原生提供商设置、秘密文件引用及凭据导出脱敏|只解决证书 DNS 验证，不提供业务 DNS CRUD|
+|DNS Manager|提供商驱动的凭据、授权区域、解析记录管理，独立加密存储、修订冲突检查和写入审计|当前只有 AliDNS 真实适配器，不提供域名注册/购买|
+|账号配置与检测|AccessKey/STS 或 ECS RAM Role，API 超时/区域，新增记录 TTL/线路默认值，连接和公共递归解析检测|RAM Role 尚无真实 ECS 验收；单一递归解析结果不代表全球传播|
+|Worker LKG|增加配置预检和 last-known-good 持久化回退适配|属于本 Fork，自行维护；不属于上游社区版原生保证|
+|构建与回归|固定上游运行时摘要和依赖哈希、独立插件打包、离线单元测试与合成浏览器验收|通用工具不内置私有仓库、真实账号或部署目标|
+
+DNS Manager 当前插件版本为 **0.5.1**。已有凭据默认锁定认证方式、详情/编辑脱敏回填；授权区域通过逐行“＋添加/删除”管理，凭据列表不展示 AccessKey ID。
+
+证书签发和业务 DNS 仍是两条独立链路：即便使用同一云账号，DNS Manager 的账号库及参数也**不会自动同步到 Scheduler 的签发配置**。实际部署需分别配置并验收。
+
+## 开发、构建与公开范围
+
+- [通用构建及测试说明](misc/fork/README.md)
+- [DNS Manager 使用与限制](misc/plugins/dnsmanager/README.md)
+- [开源提交范围与维护规则](misc/fork/OPEN_SOURCE.md)
+
+当前维护分支为 `feat/aliyun-dns`；`master` 保留上游基线，`v1.6.17` 是上游基线标签，不是本 Fork 新发布的版本。后续自研发布使用单独名称，避免与上游标签混淆。升级需同时核对源码、基础镜像和适配回归，不能只更新版本号。
+
+保留原项目的 [AGPL-3.0 许可](LICENSE.md) 及其他文件各自的许可声明；没有将上游代码重新许可为本项目独占代码。提交代码、测试、文档、通用 CI、Dockerfile 和依赖锁均可成为开源项目的一部分；不能提交无权公开的内容、真实凭据或内部环境资料。
+
+---
+
+## 原项目说明（Upstream BunkerWeb）
+
+以下徽章、服务链接与发行信息均属于上游项目。
+
 <p align="center">
 	<img alt="BunkerWeb logo" src="https://github.com/bunkerity/bunkerweb/raw/v1.6.17/misc/logo.png" height=100 width=350 />
 </p>
